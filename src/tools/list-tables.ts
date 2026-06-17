@@ -24,12 +24,9 @@ export class ListTablesTool extends BaseTool {
     };
   }
 
-  async execute(params: { schema?: string }): Promise<TableInfo[]> {
-    const validatedParams = ParameterValidator.validateListTablesParameters(params);
-    const { schema } = validatedParams;
-
+  static buildQuery(schema?: string): string {
     let query = `
-      SELECT 
+      SELECT
         TABLE_CATALOG as table_catalog,
         TABLE_SCHEMA as table_schema,
         TABLE_NAME as table_name,
@@ -37,14 +34,16 @@ export class ListTablesTool extends BaseTool {
       FROM INFORMATION_SCHEMA.TABLES
       WHERE TABLE_TYPE = 'BASE TABLE'
     `;
-
     if (schema) {
-      const escapedSchema = ParameterValidator.escapeIdentifier(schema);
-      query += ` AND TABLE_SCHEMA = ${escapedSchema}`;
+      query += ` AND TABLE_SCHEMA = '${schema}'`;
     }
-
     query += ' ORDER BY TABLE_SCHEMA, TABLE_NAME';
+    return query;
+  }
 
-    return await this.executeSafeQuery<TableInfo>(query);
+  async execute(params: { schema?: string }): Promise<TableInfo[]> {
+    const validatedParams = ParameterValidator.validateListTablesParameters(params);
+    const { schema } = validatedParams;
+    return await this.executeSafeQuery<TableInfo>(ListTablesTool.buildQuery(schema));
   }
 }

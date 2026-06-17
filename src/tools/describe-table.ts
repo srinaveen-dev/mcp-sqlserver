@@ -29,15 +29,9 @@ export class DescribeTableTool extends BaseTool {
     };
   }
 
-  async execute(params: { table_name: string; schema?: string }): Promise<ColumnInfo[]> {
-    const validatedParams = ParameterValidator.validateTableDescriptionParameters(params);
-    const { table_name, schema } = validatedParams;
-
-    const escapedTableName = ParameterValidator.escapeIdentifier(table_name);
-    const escapedSchema = ParameterValidator.escapeIdentifier(schema);
-
-    const query = `
-      SELECT 
+  static buildQuery(schema: string, tableName: string): string {
+    return `
+      SELECT
         TABLE_CATALOG as table_catalog,
         TABLE_SCHEMA as table_schema,
         TABLE_NAME as table_name,
@@ -53,11 +47,15 @@ export class DescribeTableTool extends BaseTool {
         NUMERIC_SCALE as numeric_scale,
         DATETIME_PRECISION as datetime_precision
       FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_NAME = ${escapedTableName}
-        AND TABLE_SCHEMA = ${escapedSchema}
+      WHERE TABLE_NAME = '${tableName}'
+        AND TABLE_SCHEMA = '${schema}'
       ORDER BY ORDINAL_POSITION
     `;
+  }
 
-    return await this.executeSafeQuery<ColumnInfo>(query);
+  async execute(params: { table_name: string; schema?: string }): Promise<ColumnInfo[]> {
+    const validatedParams = ParameterValidator.validateTableDescriptionParameters(params);
+    const { table_name, schema } = validatedParams;
+    return await this.executeSafeQuery<ColumnInfo>(DescribeTableTool.buildQuery(schema, table_name));
   }
 }
