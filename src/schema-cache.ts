@@ -38,7 +38,8 @@ export interface SchemaSnapshotResult {
 export class SchemaCache {
   readonly cachePath: string;
   readonly domainSourcePath: string | undefined;
-  private servedThisSession = false;
+  private _servedThisSession = false;
+  get servedThisSession(): boolean { return this._servedThisSession; }
 
   constructor(cachePath: string, domainSourcePath?: string) {
     this.cachePath = cachePath;
@@ -49,21 +50,23 @@ export class SchemaCache {
    * Returns the schema markdown if it hasn't been served yet this session.
    * Auto-generates the cache file if it doesn't exist.
    * Returns null on subsequent calls (schema already in context).
+   * Invariant: servedThisSession is true iff a non-null markdown was returned.
    */
   async getSchemaOnce(queryFn: <T>(sql: string) => Promise<sql.IResult<T>>, dbName: string): Promise<string | null> {
-    if (this.servedThisSession) {
+    if (this._servedThisSession) {
       return null;
     }
-    this.servedThisSession = true;
 
-    // Try reading existing cache
+    let markdown: string;
     if (existsSync(this.cachePath)) {
-      return readFileSync(this.cachePath, 'utf-8');
+      markdown = readFileSync(this.cachePath, 'utf-8');
+    } else {
+      const result = await this.generateSchema(queryFn, dbName);
+      markdown = result.markdown;
     }
 
-    // Generate cache
-    const result = await this.generateSchema(queryFn, dbName);
-    return result.markdown;
+    this._servedThisSession = true;
+    return markdown;
   }
 
   /**
