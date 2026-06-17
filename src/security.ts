@@ -105,9 +105,18 @@ export class QueryValidator {
 
   static addRowLimit(query: string, maxRows: number): string {
     const normalizedQuery = query.trim().toUpperCase();
-    
+
     // If query already has TOP clause, don't modify
     if (normalizedQuery.includes('TOP ')) {
+      return query;
+    }
+
+    // Don't inject TOP when OFFSET/FETCH pagination is present — SQL Server
+    // rejects SELECT TOP N ... OFFSET M ROWS FETCH NEXT N ROWS ONLY.
+    // Strip string literals first so column names (OFFSET_HOURS) and string
+    // values ('FETCH') don't false-positive.
+    const queryWithoutStrings = normalizedQuery.replace(/'(?:[^']|'')*'/g, '');
+    if (/\bOFFSET\b/.test(queryWithoutStrings) || /\bFETCH\b/.test(queryWithoutStrings)) {
       return query;
     }
 

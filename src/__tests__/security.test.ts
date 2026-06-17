@@ -156,3 +156,62 @@ describe('QueryValidator.validateQuery - SEC-1: missing high-risk keywords', () 
     });
   });
 });
+
+describe('addRowLimit - Bug #3: pagination compatibility', () => {
+  describe('should NOT add TOP when OFFSET/FETCH pagination is present (currently fail)', () => {
+    it('OFFSET/FETCH NEXT — query must be returned unchanged', () => {
+      const q = 'SELECT * FROM Orders ORDER BY Id OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY';
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe(q);
+    });
+
+    it('OFFSET/FETCH FIRST variant — query must be returned unchanged', () => {
+      const q = 'SELECT * FROM Orders ORDER BY Id OFFSET 0 ROWS FETCH FIRST 50 ROWS ONLY';
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe(q);
+    });
+
+    it('lowercase pagination keywords — query must be returned unchanged', () => {
+      const q = 'select * from t order by id offset 5 rows fetch next 5 rows only';
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe(q);
+    });
+  });
+
+  describe('should still add TOP when pagination keywords are absent (regression guard)', () => {
+    it('simple SELECT — TOP injected', () => {
+      const result = QueryValidator.addRowLimit('SELECT * FROM Orders', 1000);
+      expect(result).toMatch(/SELECT\s+TOP\s+1000/i);
+    });
+
+    it('SELECT with WHERE — TOP injected', () => {
+      const result = QueryValidator.addRowLimit(
+        'SELECT id, name FROM Users WHERE active = 1',
+        500
+      );
+      expect(result).toMatch(/SELECT\s+TOP\s+500/i);
+    });
+
+    // CTEs: the ^(\s*SELECT\s+) regex does not match a WITH-leading query, so
+    // TOP is never injected for CTEs. This is a pre-existing gap unrelated to
+    // the pagination fix — behavior is unchanged before and after.
+    it('CTE — TOP not injected (pre-existing gap, not changed by this fix)', () => {
+      const q = 'WITH x AS (SELECT 1 AS n) SELECT * FROM x';
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe(q);
+    });
+  });
+
+  describe('pagination keywords in column names or string literals must not skip TOP injection', () => {
+    // A naive includes('OFFSET') would false-positive here; word-boundary match avoids it.
+    it('column name OFFSET_HOURS — TOP is injected', () => {
+      const result = QueryValidator.addRowLimit('SELECT OFFSET_HOURS FROM Schedule', 1000);
+      expect(result).toMatch(/SELECT\s+TOP\s+1000/i);
+    });
+
+    // A naive includes('FETCH') would false-positive here; stripping string literals avoids it.
+    it("string literal 'FETCH' — TOP is injected", () => {
+      const result = QueryValidator.addRowLimit(
+        "SELECT * FROM Logs WHERE Action = 'FETCH'",
+        1000
+      );
+      expect(result).toMatch(/SELECT\s+TOP\s+1000/i);
+    });
+  });
+});
