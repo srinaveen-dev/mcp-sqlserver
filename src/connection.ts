@@ -23,6 +23,11 @@ export class SqlServerConnection {
         trustServerCertificate: this.config.trustServerCertificate,
         connectTimeout: this.config.connectionTimeout,
         requestTimeout: this.config.requestTimeout,
+        // ApplicationIntent=ReadOnly is advisory only — Azure SQL uses it to
+        // route to a read-only replica if one exists, but it does NOT prevent
+        // writes on a primary. The query validator (src/security.ts) is the
+        // actual write barrier. Kept here because it's a no-op when no replica
+        // exists and provides routing benefit if read replicas are added later.
         readOnlyIntent: true,
       },
       pool: {
