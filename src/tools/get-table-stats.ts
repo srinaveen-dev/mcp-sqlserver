@@ -1,5 +1,6 @@
 import { BaseTool } from './base.js';
 import { TableStats } from '../types.js';
+import { ParameterValidator } from '../validation.js';
 
 export class GetTableStatsTool extends BaseTool {
   getName(): string {
@@ -28,11 +29,9 @@ export class GetTableStatsTool extends BaseTool {
     };
   }
 
-  async execute(params: { table_name?: string; schema?: string }): Promise<TableStats[]> {
-    const { table_name, schema = 'dbo' } = params;
-
+  static buildQuery(tableName: string | undefined, schema: string): string {
     let query = `
-      SELECT 
+      SELECT
         s.name as table_schema,
         t.name as table_name,
         p.rows as row_count,
@@ -48,26 +47,20 @@ export class GetTableStatsTool extends BaseTool {
         AND t.is_ms_shipped = 0
         AND i.object_id > 255
     `;
-
-    const conditions = [];
-    
-    if (table_name) {
-      conditions.push(`t.name = '${table_name.replace(/'/g, "''")}'`);
+    if (tableName) {
+      query += ` AND t.name = '${tableName}' AND s.name = '${schema}'`;
     }
-    
-    if (schema && table_name) {
-      conditions.push(`s.name = '${schema.replace(/'/g, "''")}'`);
-    }
-
-    if (conditions.length > 0) {
-      query += ` AND ${conditions.join(' AND ')}`;
-    }
-
     query += `
       GROUP BY s.name, t.name, p.rows
       ORDER BY table_schema, table_name
     `;
+    return query;
+  }
 
-    return await this.executeSafeQuery<TableStats>(query);
+  async execute(params: { table_name?: string; schema?: string }): Promise<TableStats[]> {
+    const validatedParams = ParameterValidator.validateForeignKeyParameters(params);
+    const table_name = validatedParams.table_name;
+    const schema = validatedParams.schema ?? 'dbo';
+    return await this.executeSafeQuery<TableStats>(GetTableStatsTool.buildQuery(table_name, schema));
   }
 }
