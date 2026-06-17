@@ -189,12 +189,9 @@ describe('addRowLimit - Bug #3: pagination compatibility', () => {
       expect(result).toMatch(/SELECT\s+TOP\s+500/i);
     });
 
-    // CTEs: the ^(\s*SELECT\s+) regex does not match a WITH-leading query, so
-    // TOP is never injected for CTEs. This is a pre-existing gap unrelated to
-    // the pagination fix — behavior is unchanged before and after.
-    it('CTE — TOP not injected (pre-existing gap, not changed by this fix)', () => {
+    it('CTE — TOP injected on terminal SELECT (Bug #9 fix)', () => {
       const q = 'WITH x AS (SELECT 1 AS n) SELECT * FROM x';
-      expect(QueryValidator.addRowLimit(q, 1000)).toBe(q);
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe('WITH x AS (SELECT 1 AS n) SELECT TOP 1000 * FROM x');
     });
   });
 
@@ -212,6 +209,96 @@ describe('addRowLimit - Bug #3: pagination compatibility', () => {
         1000
       );
       expect(result).toMatch(/SELECT\s+TOP\s+1000/i);
+    });
+  });
+});
+
+describe('addRowLimit - Bug #9: CTE queries bypass row limit', () => {
+  describe('CTE queries — TOP injected on terminal SELECT (currently fail before fix)', () => {
+    it('simple single CTE', () => {
+      const q = 'WITH c AS (SELECT * FROM t) SELECT * FROM c';
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe(
+        'WITH c AS (SELECT * FROM t) SELECT TOP 1000 * FROM c'
+      );
+    });
+
+    it('multiple CTEs', () => {
+      const q = 'WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) SELECT * FROM a JOIN b ON a.x = b.y';
+      const result = QueryValidator.addRowLimit(q, 500);
+      expect(result).toMatch(/\) SELECT TOP 500 \* FROM a/i);
+    });
+
+    it('CTE with nested parens in definition', () => {
+      const q = 'WITH c AS (SELECT * FROM t WHERE x IN (SELECT id FROM u)) SELECT * FROM c';
+      expect(QueryValidator.addRowLimit(q, 1000)).toBe(
+        'WITH c AS (SELECT * FROM t WHERE x IN (SELECT id FROM u)) SELECT TOP 1000 * FROM c'
+      );
+    });
+
+    it('CTE with string literal containing SELECT and )', () => {
+      const q = "WITH c AS (SELECT * FROM t WHERE name = 'SELECT FROM x)') SELECT * FROM c";
+      const result = QueryValidator.addRowLimit(q, 1000);
+      expect(result).toContain("SELECT TOP 1000 * FROM c");
+      expect(result).toContain("name = 'SELECT FROM x)'");
+    });
+
+    it('CTE with single-line comment containing )', () => {
+      const q = 'WITH c AS (SELECT * FROM t -- bad )\n) SELECT * FROM c';
+      expect(QueryValidator.addRowLimit(q, 1000)).toContain('SELECT TOP 1000 * FROM c');
+    });
+
+    it('CTE with block comment containing )', () => {
+      const q = 'WITH c AS (SELECT * FROM t /* ) SELECT */) SELECT * FROM c';
+      expect(QueryValidator.addRowLimit(q, 1000)).toContain('SELECT TOP 1000 * FROM c');
+    });
+
+    it('CTE with SELECT TOP N in inner definition — outer terminal SELECT still gets capped', () => {
+      const q = 'WITH c AS (SELECT TOP 5 * FROM t) SELECT * FROM c';
+      const result = QueryValidator.addRowLimit(q, 1000);
+      expect(result).toContain('SELECT TOP 5 * FROM t');
+      expect(result).toMatch(/\) SELECT TOP 1000 \* FROM c/i);
+    });
+  });
+
+  describe('malformed CTEs — addRowLimit throws (currently return query unchanged)', () => {
+    it('unbalanced parens — missing closing paren', () => {
+      const q = 'WITH c AS (SELECT * FROM t SELECT * FROM c';
+      expect(() => QueryValidator.addRowLimit(q, 1000)).toThrow();
+    });
+
+    it('WITH keyword but no terminal SELECT', () => {
+      const q = 'WITH c AS (SELECT * FROM t)';
+      expect(() => QueryValidator.addRowLimit(q, 1000)).toThrow();
+    });
+  });
+
+  describe('validator wiring — WITH + DML keywords are rejected (should already pass)', () => {
+    it('WITH c AS (...) DELETE FROM c is rejected by validateQuery', () => {
+      const { isValid } = QueryValidator.validateQuery(
+        'WITH c AS (SELECT * FROM t) DELETE FROM t'
+      );
+      expect(isValid).toBe(false);
+    });
+
+    it('WITH c AS (...) INSERT INTO c is rejected by validateQuery', () => {
+      const { isValid } = QueryValidator.validateQuery(
+        'WITH c AS (SELECT * FROM t) INSERT INTO t SELECT * FROM c'
+      );
+      expect(isValid).toBe(false);
+    });
+
+    it('WITH c AS (...) UPDATE c SET is rejected by validateQuery', () => {
+      const { isValid } = QueryValidator.validateQuery(
+        'WITH c AS (SELECT * FROM t) UPDATE t SET x = 1'
+      );
+      expect(isValid).toBe(false);
+    });
+
+    it('WITH c AS (...) MERGE is rejected by validateQuery', () => {
+      const { isValid } = QueryValidator.validateQuery(
+        'WITH c AS (SELECT * FROM t) MERGE INTO t USING c ON (t.id = c.id) WHEN MATCHED THEN UPDATE SET x = 1'
+      );
+      expect(isValid).toBe(false);
     });
   });
 });

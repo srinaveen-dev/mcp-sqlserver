@@ -106,11 +106,6 @@ export class QueryValidator {
   static addRowLimit(query: string, maxRows: number): string {
     const normalizedQuery = query.trim().toUpperCase();
 
-    // If query already has TOP clause, don't modify
-    if (normalizedQuery.includes('TOP ')) {
-      return query;
-    }
-
     // Don't inject TOP when OFFSET/FETCH pagination is present — SQL Server
     // rejects SELECT TOP N ... OFFSET M ROWS FETCH NEXT N ROWS ONLY.
     // Strip string literals first so column names (OFFSET_HOURS) and string
@@ -120,10 +115,67 @@ export class QueryValidator {
       return query;
     }
 
+    // CTE queries (WITH ... SELECT ...): find the terminal SELECT by walking
+    // past all CTE definitions with a paren-depth counter, then inject TOP N
+    // only at the terminal SELECT. The global 'TOP ' guard is intentionally
+    // skipped here so inner CTE definitions that use TOP do not prevent the
+    // outer (terminal) SELECT from being capped.
+    if (/^\s*WITH\s/i.test(query)) {
+      const terminalOffset = QueryValidator.findCteTerminalSelect(query);
+      const fromTerminal = query.slice(terminalOffset);
+      if (/^SELECT\s+TOP\s/i.test(fromTerminal)) {
+        return query;
+      }
+      return query.slice(0, terminalOffset) + fromTerminal.replace(/^(SELECT\s+)/i, `$1TOP ${maxRows} `);
+    }
+
+    // If query already has TOP clause, don't modify (non-CTE path)
+    if (normalizedQuery.includes('TOP ')) {
+      return query;
+    }
+
     // Add TOP clause after SELECT
     return query.replace(
       /^(\s*SELECT\s+)/i,
       `$1TOP ${maxRows} `
     );
+  }
+
+  private static findCteTerminalSelect(query: string): number {
+    let depth = 0;
+    let hadPositiveDepth = false;
+    let i = 0;
+    while (i < query.length) {
+      const ch = query[i];
+      // String literal: skip '...' with '' escape
+      if (ch === "'") {
+        i++;
+        while (i < query.length) {
+          if (query[i] === "'" && query[i + 1] === "'") { i += 2; }
+          else if (query[i] === "'") { i++; break; }
+          else { i++; }
+        }
+        continue;
+      }
+      // Line comment: skip -- to end of line
+      if (ch === '-' && query[i + 1] === '-') {
+        while (i < query.length && query[i] !== '\n') i++;
+        continue;
+      }
+      // Block comment: skip /* ... */
+      if (ch === '/' && query[i + 1] === '*') {
+        i += 2;
+        while (i < query.length - 1 && !(query[i] === '*' && query[i + 1] === '/')) i++;
+        i += 2;
+        continue;
+      }
+      if (ch === '(') { depth++; hadPositiveDepth = true; }
+      else if (ch === ')') { depth--; }
+      else if (depth === 0 && hadPositiveDepth && /^SELECT\s/i.test(query.slice(i))) {
+        return i;
+      }
+      i++;
+    }
+    throw new Error('CTE query must have a terminal SELECT after the last CTE definition');
   }
 }
