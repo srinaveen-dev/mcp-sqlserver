@@ -41,9 +41,10 @@ export class ListTablesTool extends BaseTool {
     return query;
   }
 
-  async execute(params: { schema?: string }): Promise<TableInfo[]> {
+  async execute(params: { schema?: string }): Promise<{ data: TableInfo[]; truncated: boolean; rowLimit: number }> {
     const validatedParams = ParameterValidator.validateListTablesParameters(params);
     const { schema } = validatedParams;
-    return await this.executeSafeQuery<TableInfo>(ListTablesTool.buildQuery(schema));
+    const data = await this.executeSafeQuery<TableInfo>(ListTablesTool.buildQuery(schema));
+    return { data, truncated: data.length === this.maxRows, rowLimit: this.maxRows };
   }
 }

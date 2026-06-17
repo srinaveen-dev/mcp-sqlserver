@@ -51,10 +51,11 @@ export class GetForeignKeysTool extends BaseTool {
     return query;
   }
 
-  async execute(params: { table_name?: string; schema?: string }): Promise<ForeignKeyInfo[]> {
+  async execute(params: { table_name?: string; schema?: string }): Promise<{ data: ForeignKeyInfo[]; truncated: boolean; rowLimit: number }> {
     const validatedParams = ParameterValidator.validateForeignKeyParameters(params);
     const table_name = validatedParams.table_name;
     const schema = validatedParams.schema ?? 'dbo';
-    return await this.executeSafeQuery<ForeignKeyInfo>(GetForeignKeysTool.buildQuery(table_name, schema));
+    const data = await this.executeSafeQuery<ForeignKeyInfo>(GetForeignKeysTool.buildQuery(table_name, schema));
+    return { data, truncated: data.length === this.maxRows, rowLimit: this.maxRows };
   }
 }

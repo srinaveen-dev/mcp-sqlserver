@@ -42,8 +42,9 @@ export class ListViewsTool extends BaseTool {
     return query;
   }
 
-  async execute(params: { schema?: string }): Promise<ViewInfo[]> {
+  async execute(params: { schema?: string }): Promise<{ data: ViewInfo[]; truncated: boolean; rowLimit: number }> {
     const validatedParams = ParameterValidator.validateListTablesParameters(params);
-    return await this.executeSafeQuery<ViewInfo>(ListViewsTool.buildQuery(validatedParams.schema));
+    const data = await this.executeSafeQuery<ViewInfo>(ListViewsTool.buildQuery(validatedParams.schema));
+    return { data, truncated: data.length === this.maxRows, rowLimit: this.maxRows };
   }
 }

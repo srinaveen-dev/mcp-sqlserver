@@ -77,11 +77,13 @@ export class ExecuteQueryTool extends BaseTool {
       // Convert to rows array
       const rows = result.map(row => columns.map(col => row[col]));
 
-      const response: QueryResult & { schema?: string } = {
+      const response: QueryResult & { schema?: string; truncated: boolean; rowLimit: number } = {
         columns,
         rows,
         rowCount: result.length,
         executionTime,
+        truncated: result.length === maxRows,
+        rowLimit: maxRows,
       };
 
       if (schema) {
