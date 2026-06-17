@@ -26,6 +26,11 @@ export class QueryValidator {
     'GRANT',
     'REVOKE',
     'DENY',
+    'BACKUP',
+    'RESTORE',
+    'DBCC',
+    'OPENQUERY',
+    'SHUTDOWN',
   ];
 
   static validateQuery(query: string): { isValid: boolean; error?: string } {
@@ -47,12 +52,22 @@ export class QueryValidator {
       };
     }
 
-    // Check for forbidden keywords
+    // Strip string literals before scanning; /'(?:[^']|'')*'/g handles SQL's
+    // doubled-quote escape (e.g. O''Brien) that naive /'[^']*'/g misparses.
+    const queryWithoutStrings = normalizedQuery.replace(/'(?:[^']|'')*'/g, '');
+
+    // Check for forbidden keywords using word boundaries so identifiers like
+    // CreatedDate or Executions don't false-positive against CREATE/EXEC.
+    // SP_ and XP_ are prefix patterns - _ is a word char so only a leading \b
+    // is used; the following identifier characters provide natural separation.
     for (const forbidden of this.FORBIDDEN_KEYWORDS) {
-      if (normalizedQuery.includes(forbidden)) {
-        return { 
-          isValid: false, 
-          error: `Forbidden keyword detected: ${forbidden}` 
+      const pattern = forbidden.endsWith('_')
+        ? new RegExp(`\\b${forbidden}`)
+        : new RegExp(`\\b${forbidden}\\b`);
+      if (pattern.test(queryWithoutStrings)) {
+        return {
+          isValid: false,
+          error: `Forbidden keyword detected: ${forbidden}`
         };
       }
     }
