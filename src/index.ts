@@ -22,6 +22,7 @@ async function runServer() {
       ExecuteQueryTool,
       GetForeignKeysTool,
       GetServerInfoTool,
+      GetSchemaTool,
       GetTableStatsTool,
       TestConnectionTool,
       SnapshotSchemaTool,
@@ -133,6 +134,7 @@ async function runServer() {
           ExecuteQueryTool,
           GetForeignKeysTool,
           GetServerInfoTool,
+          GetSchemaTool,
           GetTableStatsTool,
           SnapshotSchemaTool,
         ];

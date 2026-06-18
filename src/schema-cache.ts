@@ -38,35 +38,15 @@ export interface SchemaSnapshotResult {
 export class SchemaCache {
   readonly cachePath: string;
   readonly domainSourcePath: string | undefined;
-  private _servedThisSession = false;
-  get servedThisSession(): boolean { return this._servedThisSession; }
 
   constructor(cachePath: string, domainSourcePath?: string) {
     this.cachePath = cachePath;
     this.domainSourcePath = domainSourcePath;
   }
 
-  /**
-   * Returns the schema markdown if it hasn't been served yet this session.
-   * Auto-generates the cache file if it doesn't exist.
-   * Returns null on subsequent calls (schema already in context).
-   * Invariant: servedThisSession is true iff a non-null markdown was returned.
-   */
-  async getSchemaOnce(queryFn: <T>(sql: string) => Promise<sql.IResult<T>>, dbName: string): Promise<string | null> {
-    if (this._servedThisSession) {
-      return null;
-    }
-
-    let markdown: string;
-    if (existsSync(this.cachePath)) {
-      markdown = readFileSync(this.cachePath, 'utf-8');
-    } else {
-      const result = await this.generateSchema(queryFn, dbName);
-      markdown = result.markdown;
-    }
-
-    this._servedThisSession = true;
-    return markdown;
+  readCached(): string | null {
+    if (!existsSync(this.cachePath)) return null;
+    return readFileSync(this.cachePath, 'utf-8');
   }
 
   /**
@@ -162,14 +142,14 @@ export class SchemaCache {
         const flags: string[] = [];
         if (pkSet.has(colKey)) flags.push('PK');
         const fk = fkMap.get(colKey);
-        if (fk) flags.push(`FK\u2192${fk.referenced_schema}.${fk.referenced_table}.${fk.referenced_column}`);
+        if (fk) flags.push(`FK→${fk.referenced_schema}.${fk.referenced_table}.${fk.referenced_column}`);
         if (col.is_nullable === 'YES') flags.push('null');
 
         const flagStr = flags.length > 0 ? ' ' + flags.join(' ') : '';
         colParts.push(`${col.column_name} ${typeStr}${flagStr}`);
       }
 
-      lines.push(colParts.join(' \u00b7 '));
+      lines.push(colParts.join(' · '));
       lines.push('');
     }
 

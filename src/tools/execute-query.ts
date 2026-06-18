@@ -2,21 +2,14 @@ import { BaseTool } from './base.js';
 import { QueryResult } from '../types.js';
 import { ParameterValidator } from '../validation.js';
 import { ErrorHandler } from '../errors.js';
-import { SchemaCache } from '../schema-cache.js';
 
 export class ExecuteQueryTool extends BaseTool {
-  private schemaCache: SchemaCache | null = null;
-
-  setSchemaCache(cache: SchemaCache): void {
-    this.schemaCache = cache;
-  }
-
   getName(): string {
     return 'execute_query';
   }
 
   getDescription(): string {
-    return 'Execute a read-only SELECT query against the database. On first call, the full schema is included in the response for context.';
+    return 'Execute a read-only SELECT query against the database.';
   }
 
   getInputSchema(): any {
@@ -38,7 +31,7 @@ export class ExecuteQueryTool extends BaseTool {
     };
   }
 
-  async execute(params: { query: string; limit?: number }): Promise<QueryResult & { schema?: string }> {
+  async execute(params: { query: string; limit?: number }): Promise<QueryResult & { truncated: boolean; rowLimit: number }> {
     const validatedParams = ParameterValidator.validateQueryParameters(params);
     const { query, limit } = validatedParams;
     const maxRows = limit;
@@ -47,19 +40,6 @@ export class ExecuteQueryTool extends BaseTool {
 
     try {
       await this.connection.connect();
-
-      // On first call, load/generate schema and include it
-      let schema: string | null = null;
-      if (this.schemaCache) {
-        try {
-          const dbName = this.connection.getConfig().database ?? 'unknown';
-          const queryFn = this.connection.query.bind(this.connection);
-          schema = await this.schemaCache.getSchemaOnce(queryFn, dbName);
-        } catch (schemaError) {
-          // Don't fail the query if schema loading fails
-          console.error('Warning: Failed to load schema cache:', schemaError);
-        }
-      }
 
       // Override the maxRows for this specific query
       const originalMaxRows = this.maxRows;
@@ -77,7 +57,7 @@ export class ExecuteQueryTool extends BaseTool {
       // Convert to rows array
       const rows = result.map(row => columns.map(col => row[col]));
 
-      const response: QueryResult & { schema?: string; truncated: boolean; rowLimit: number } = {
+      return {
         columns,
         rows,
         rowCount: result.length,
@@ -85,12 +65,6 @@ export class ExecuteQueryTool extends BaseTool {
         truncated: result.length === maxRows,
         rowLimit: maxRows,
       };
-
-      if (schema) {
-        response.schema = schema;
-      }
-
-      return response;
     } catch (error) {
       const executionTime = Date.now() - startTime;
       const mcpError = ErrorHandler.handleSqlServerError(error);
