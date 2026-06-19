@@ -10,8 +10,13 @@ export class SqlServerConnection {
   }
 
   async connect(): Promise<void> {
-    if (this.pool) {
+    if (this.pool && this.pool.connected) {
       return;
+    }
+    // Pool exists but was explicitly closed — tear it down before recreating
+    if (this.pool) {
+      try { await this.pool.close(); } catch { /* ignore */ }
+      this.pool = null;
     }
 
     const sqlConfig: sql.config = {
@@ -101,8 +106,19 @@ export class SqlServerConnection {
       throw new Error('Database connection not established');
     }
 
-    const request = this.pool.request();
-    return await request.query(queryText);
+    try {
+      const request = this.pool.request();
+      return await request.query(queryText);
+    } catch (error) {
+      // Pool held a dead connection (e.g. Azure SQL idle timeout). Reset and retry once.
+      if (error instanceof Error && error.message.toLowerCase().includes('connection is closed')) {
+        this.pool = null;
+        await this.connect();
+        const request = this.pool!.request();
+        return await request.query(queryText);
+      }
+      throw error;
+    }
   }
 
   async testConnection(): Promise<boolean> {

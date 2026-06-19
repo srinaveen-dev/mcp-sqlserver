@@ -57,8 +57,21 @@ export class ErrorHandler {
       return new MCPError('Unknown database error occurred', 'UNKNOWN_ERROR');
     }
 
-    const message = error.message || error.toString();
+    if (error instanceof MCPError) {
+      return error;
+    }
+
+    const message = error.message || '';
     const code = error.code || error.number;
+    const errorName: string = error.name || error.constructor?.name || '';
+
+    // mssql ConnectionError often has an empty message — detect it by class name
+    if (!message && (errorName === 'ConnectionError' || errorName.toLowerCase().includes('connection'))) {
+      return new ConnectionError(
+        'Connection failed: Unable to reach SQL Server — check host, port, credentials, and VPN/firewall',
+        { originalError: errorName, code }
+      );
+    }
 
     // SQL Server specific error handling
     if (typeof code === 'number') {
@@ -168,9 +181,10 @@ export class ErrorHandler {
     }
 
     // Default to generic query error
+    const displayMessage = message || errorName || 'Unknown error';
     return new QueryError(
-      `Database operation failed: ${message}`,
-      { originalError: message }
+      `Database operation failed: ${displayMessage}`,
+      { originalError: displayMessage }
     );
   }
 

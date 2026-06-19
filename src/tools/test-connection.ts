@@ -112,8 +112,7 @@ export class TestConnectionTool extends BaseTool {
       result.connectionTime = Date.now() - startTime;
       
       if (error instanceof Error) {
-        // Parse common SQL Server error codes for better messages
-        const message = error.message;
+        const message = error.message || error.name || error.toString() || '';
         if (message.includes('Login failed')) {
           result.error = 'Authentication failed: Invalid username or password';
         } else if (message.includes('server was not found')) {
@@ -124,6 +123,8 @@ export class TestConnectionTool extends BaseTool {
           result.error = 'Connection failed: SSL/Encryption configuration issue';
         } else if (message.includes('certificate')) {
           result.error = 'Connection failed: Certificate validation issue';
+        } else if (!message || message === 'ConnectionError') {
+          result.error = 'Connection failed: Unable to reach SQL Server — check host, credentials, VPN, and firewall';
         } else {
           result.error = `Connection failed: ${message}`;
         }
