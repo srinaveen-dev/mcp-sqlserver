@@ -3,6 +3,8 @@ import { dirname } from 'path';
 import sql from 'mssql';
 import { DomainMapper } from './domain-mapper.js';
 
+type QueryFn = <T>(sqlText: string) => Promise<sql.IResult<T>>;
+
 interface SchemaColumn {
   table_schema: string;
   table_name: string;
@@ -35,7 +37,17 @@ export interface SchemaSnapshotResult {
   columns: number;
 }
 
+interface SchemaCacheMetadata {
+  maxModifyDate: string | null;
+  objectCount: number;
+  generatedAt: string;
+}
+
 export class SchemaCache {
+  private static readonly STALENESS_QUERY =
+    "SELECT MAX(modify_date) AS LastModified, COUNT(*) AS ObjectCount " +
+    "FROM sys.objects WHERE type IN ('U', 'V', 'F')";
+
   readonly cachePath: string;
   readonly domainSourcePath: string | undefined;
 
@@ -44,15 +56,32 @@ export class SchemaCache {
     this.domainSourcePath = domainSourcePath;
   }
 
+  private get metadataPath(): string {
+    return `${this.cachePath}.meta.json`;
+  }
+
   readCached(): string | null {
     if (!existsSync(this.cachePath)) return null;
     return readFileSync(this.cachePath, 'utf-8');
   }
 
+  private async fetchCurrentMetadata(queryFn: QueryFn): Promise<{ maxModifyDate: string | null; objectCount: number }> {
+    const result = await queryFn<{ LastModified: Date | null; ObjectCount: number }>(SchemaCache.STALENESS_QUERY);
+    const row = result.recordset[0];
+    return {
+      maxModifyDate: row.LastModified ? new Date(row.LastModified).toISOString() : null,
+      objectCount: row.ObjectCount,
+    };
+  }
+
+  private writeMetadata(metadata: SchemaCacheMetadata): void {
+    writeFileSync(this.metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+  }
+
   /**
    * Force-regenerate the schema cache file.
    */
-  async generateSchema(queryFn: <T>(sql: string) => Promise<sql.IResult<T>>, dbName: string): Promise<SchemaSnapshotResult> {
+  async generateSchema(queryFn: QueryFn, dbName: string): Promise<SchemaSnapshotResult> {
     const columns = await queryFn<SchemaColumn>(`
       SELECT
         c.TABLE_SCHEMA as table_schema,
@@ -167,9 +196,15 @@ export class SchemaCache {
       }
     }
 
-    // Write cache file
+    // Write cache file and metadata sidecar
     mkdirSync(dirname(this.cachePath), { recursive: true });
     writeFileSync(this.cachePath, markdown, 'utf-8');
+    const currentMeta = await this.fetchCurrentMetadata(queryFn);
+    this.writeMetadata({
+      maxModifyDate: currentMeta.maxModifyDate,
+      objectCount: currentMeta.objectCount,
+      generatedAt: new Date().toISOString(),
+    });
 
     return {
       markdown,
