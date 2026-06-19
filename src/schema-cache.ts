@@ -65,6 +65,23 @@ export class SchemaCache {
     return readFileSync(this.cachePath, 'utf-8');
   }
 
+  async readCachedIfFresh(queryFn: QueryFn): Promise<string | null> {
+    if (!existsSync(this.cachePath)) return null;
+
+    const storedMeta = this.readMetadata();
+    if (storedMeta === null) return null;
+
+    const currentMeta = await this.fetchCurrentMetadata(queryFn);
+    if (
+      currentMeta.maxModifyDate !== storedMeta.maxModifyDate ||
+      currentMeta.objectCount !== storedMeta.objectCount
+    ) {
+      return null;
+    }
+
+    return readFileSync(this.cachePath, 'utf-8');
+  }
+
   private async fetchCurrentMetadata(queryFn: QueryFn): Promise<{ maxModifyDate: string | null; objectCount: number }> {
     const result = await queryFn<{ LastModified: Date | null; ObjectCount: number }>(SchemaCache.STALENESS_QUERY);
     const row = result.recordset[0];
@@ -76,6 +93,15 @@ export class SchemaCache {
 
   private writeMetadata(metadata: SchemaCacheMetadata): void {
     writeFileSync(this.metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+  }
+
+  private readMetadata(): SchemaCacheMetadata | null {
+    if (!existsSync(this.metadataPath)) return null;
+    try {
+      return JSON.parse(readFileSync(this.metadataPath, 'utf-8')) as SchemaCacheMetadata;
+    } catch {
+      return null;
+    }
   }
 
   /**
