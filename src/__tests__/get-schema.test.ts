@@ -14,9 +14,9 @@ function mockConnection(): SqlServerConnection {
 }
 
 describe('GetSchemaTool', () => {
-  it('returns cached schema when readCached() returns content — no DB connection required', async () => {
+  it('returns cached schema when readCachedIfFresh() returns content', async () => {
     const cache = {
-      readCached: () => '# TestDB Schema\n## dbo.Users\nid int PK',
+      readCachedIfFresh: () => Promise.resolve('# TestDB Schema\n## dbo.Users\nid int PK'),
     } as unknown as SchemaCache;
     const tool = new GetSchemaTool(mockConnection(), 1000);
     tool.setSchemaCache(cache);
@@ -25,12 +25,12 @@ describe('GetSchemaTool', () => {
     expect(result.schema).toBe('# TestDB Schema\n## dbo.Users\nid int PK');
   });
 
-  it('generates and returns schema when readCached() returns null — cold path', async () => {
+  it('generates and returns schema when readCachedIfFresh() returns null — cold path', async () => {
     const generateSchema = jest.fn<() => Promise<{ markdown: string; tables: number; columns: number }>>()
       .mockResolvedValue({ markdown: '# Generated Schema', tables: 3, columns: 12 });
 
     const cache = {
-      readCached: () => null,
+      readCachedIfFresh: () => Promise.resolve(null),
       generateSchema,
     } as unknown as SchemaCache;
     const tool = new GetSchemaTool(mockConnection(), 1000);
@@ -48,5 +48,21 @@ describe('GetSchemaTool', () => {
     await expect(tool.execute({} as never)).rejects.toThrow(
       'Schema cache not configured. Set SQLSERVER_SCHEMA_CACHE_PATH environment variable.'
     );
+  });
+
+  it('regenerates and returns schema when readCachedIfFresh() returns null — stale path', async () => {
+    const generateSchema = jest.fn<() => Promise<{ markdown: string; tables: number; columns: number }>>()
+      .mockResolvedValue({ markdown: '# Refreshed Schema', tables: 5, columns: 20 });
+
+    const cache = {
+      readCachedIfFresh: () => Promise.resolve(null),
+      generateSchema,
+    } as unknown as SchemaCache;
+    const tool = new GetSchemaTool(mockConnection(), 1000);
+    tool.setSchemaCache(cache);
+
+    const result = await tool.execute({} as never);
+    expect(result.schema).toBe('# Refreshed Schema');
+    expect(generateSchema).toHaveBeenCalledTimes(1);
   });
 });

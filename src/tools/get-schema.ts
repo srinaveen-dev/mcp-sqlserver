@@ -37,18 +37,24 @@ export class GetSchemaTool extends BaseTool {
     }
 
     try {
-      const cached = this.schemaCache.readCached();
+      await this.connection.connect();
+      const dbName = this.connection.getConfig().database ?? 'unknown';
+      const queryFn = this.connection.query.bind(this.connection);
+
+      const cached = await this.schemaCache.readCachedIfFresh(queryFn);
       if (cached !== null) {
         return { schema: cached };
       }
 
-      await this.connection.connect();
-      const dbName = this.connection.getConfig().database ?? 'unknown';
-      const queryFn = this.connection.query.bind(this.connection);
+      // Cache missing or stale — regenerate
       const result = await this.schemaCache.generateSchema(queryFn, dbName);
       return { schema: result.markdown };
     } catch (error) {
       const mcpError = ErrorHandler.handleSqlServerError(error);
+      mcpError.message =
+        'Schema cache not found and database is unreachable — ' +
+        'restore the cache file or fix the connection, then call snapshot_schema to rebuild it. ' +
+        `(${mcpError.message})`;
       throw mcpError;
     }
   }
