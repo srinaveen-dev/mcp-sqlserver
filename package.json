@@ -1,52 +1,15 @@
 {
-  "name": "@bilims/mcp-sqlserver",
+  "name": "mcp-sqlserver",
   "version": "2.0.3",
-  "description": "A read-only Model Context Protocol (MCP) server for Microsoft SQL Server that enables AI agents to safely explore and query SQL Server databases",
   "type": "module",
+  "private": true,
   "main": "dist/index.js",
-  "bin": {
-    "mcp-sqlserver": "dist/index.js"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
-    "INSTALL.md",
-    "QUICK-START.md",
-    "examples"
-  ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "setup": "npm run build && echo 'Setup complete! See README.md for configuration instructions.'",
-    "test-connection": "node dist/index.js --help || echo 'Please set environment variables. See README.md for details.'",
     "lint": "eslint src/**/*.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
-  },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "sql-server",
-    "mssql",
-    "database",
-    "ai",
-    "assistant",
-    "claude",
-    "readonly",
-    "schema-discovery",
-    "data-exploration"
-  ],
-  "author": "Bilims",
-  "license": "MIT",
-  "homepage": "https://github.com/bilims/mcp-sqlserver",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bilims/mcp-sqlserver.git"
-  },
-  "bugs": {
-    "url": "https://github.com/bilims/mcp-sqlserver/issues"
   },
   "dependencies": {
     "@azure/identity": "^4.4.0",
