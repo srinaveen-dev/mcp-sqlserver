@@ -160,3 +160,6 @@ auth.json
 tokens.json
 AUDIT.md
 
+# Claude Code local IDE config (not part of the project)
+.claude/
+
